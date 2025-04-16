@@ -7,7 +7,7 @@ import openai
 import requests
 
 # --- Configuration ---
-# Set a default API key for your own authentication. Use Railway environment variable "API_KEY" if provided.
+# Default API key for our own authentication (can be overridden via Railway environment variable "API_KEY")
 DEFAULT_API_KEY = "vertiqalKey1"
 API_KEY = os.getenv("API_KEY", DEFAULT_API_KEY)
 API_KEY_NAME = "X-API-Key"
@@ -15,7 +15,7 @@ API_KEY_NAME = "X-API-Key"
 app = FastAPI()
 
 # --- CORS Configuration ---
-# Allow only your OpenWebUI public domain to send requests.
+# Allow requests from your OpenWebUI public domain.
 origins = [
     "https://ralph.vertiqal.ai",  # Adjust as needed.
 ]
@@ -45,6 +45,7 @@ def fetch_openai_models() -> List[Dict[str, Any]]:
     The OpenAI base URL is configurable via the "OPENAI_API_BASE" environment variable.
     """
     openai.api_key = os.getenv("OPENAI_API_KEY")
+    # Use the configurable OpenAI base URL if set; default to the standard API URL.
     openai.api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
     if not openai.api_key:
         print("OPENAI_API_KEY not set.")
@@ -63,8 +64,8 @@ def fetch_openai_models() -> List[Dict[str, Any]]:
 def fetch_grok_models() -> List[Dict[str, Any]]:
     """
     Fetch the list of models from Grok (xAI) using their API.
-    Ensure the environment variables GROK_API_KEY and GROK_BASE_URL are set.
-    For this example, GROK_BASE_URL should be "https://api.x.ai/v1" (or as provided).
+    Ensure that the environment variables GROK_API_KEY and GROK_BASE_URL are set.
+    For this example, set GROK_BASE_URL to "https://api.x.ai/v1".
     """
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
@@ -107,10 +108,10 @@ class ChatRequest(BaseModel):
 # --- Function to Call Grok Chat Completions ---
 def grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     """
-    Call the Grok (xAI) chat completions endpoint.
-    This example uses the URL provided in the sample:
-      https://api.x.ai/v1/chat/completions
-    Ensure GROK_API_KEY and GROK_BASE_URL are set appropriately.
+    Call Grok (xAI)'s chat completions endpoint.
+    This example uses the sample provided:
+      curl https://api.x.ai/v1/chat/completions ...
+    Ensure that GROK_API_KEY and GROK_BASE_URL are set properly.
     """
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
@@ -148,7 +149,7 @@ async def create_chat_completion(chat_request: ChatRequest, api_key: str = Depen
         if not openai.api_key:
             raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
         try:
-            # Use the asynchronous method provided by the new OpenAI interface:
+            # Use the asynchronous interface provided by OpenAI 1.0.0+
             completion = await openai.ChatCompletion.acreate(
                 model=model,
                 messages=[{"role": m.role, "content": m.content} for m in chat_request.messages]
@@ -157,7 +158,7 @@ async def create_chat_completion(chat_request: ChatRequest, api_key: str = Depen
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    # For Grok models (IDs starting with "grok"):
+    # For Grok models (model IDs starting with "grok"):
     elif model.startswith("grok"):
         try:
             result = grok_chat_completion(chat_request)
