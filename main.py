@@ -44,7 +44,7 @@ class ChatRequest(BaseModel):
     model: str
     messages: List[Message]
 
-# --- OpenAI API Call (using httpx) ---
+# --- OpenAI API Functions Using httpx ---
 async def call_openai_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     openai_api_key = os.getenv("OPENAI_API_KEY")
     openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
@@ -65,7 +65,26 @@ async def call_openai_chat_completion(chat_request: ChatRequest) -> Dict[str, An
     response.raise_for_status()
     return response.json()
 
-# --- Grok API Call (using httpx) ---
+async def fetch_openai_models() -> List[Dict[str, Any]]:
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
+    if not openai_api_key:
+        print("OPENAI_API_KEY not set.")
+        return []
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {openai_api_key}"
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{openai_api_base}/models", headers=headers)
+    response.raise_for_status()
+    models_response = response.json()
+    return [
+        {"id": model["id"], "object": "model", "owned_by": "openai"}
+        for model in models_response.get("data", [])
+    ]
+
+# --- Grok API Functions Using httpx ---
 async def call_grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
@@ -87,27 +106,6 @@ async def call_grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]
     response.raise_for_status()
     return response.json()
 
-# --- Fetch OpenAI Models ---
-async def fetch_openai_models() -> List[Dict[str, Any]]:
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
-    if not openai_api_key:
-        print("OPENAI_API_KEY not set.")
-        return []
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {openai_api_key}"
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(f"{openai_api_base}/models", headers=headers)
-    response.raise_for_status()
-    models_response = response.json()
-    return [
-        {"id": model["id"], "object": "model", "owned_by": "openai"}
-        for model in models_response.get("data", [])
-    ]
-
-# --- Fetch Grok Models ---
 async def fetch_grok_models() -> List[Dict[str, Any]]:
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
