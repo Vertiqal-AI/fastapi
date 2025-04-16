@@ -44,7 +44,7 @@ class ChatRequest(BaseModel):
     model: str
     messages: List[Message]
 
-# --- OpenAI API Functions Using httpx ---
+# --- OpenAI API Functions ---
 async def call_openai_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     openai_api_key = os.getenv("OPENAI_API_KEY")
     openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
@@ -59,7 +59,8 @@ async def call_openai_chat_completion(chat_request: ChatRequest) -> Dict[str, An
         "messages": [{"role": m.role, "content": m.content} for m in chat_request.messages],
         "stream": False
     }
-    url = f"{openai_api_base}/chat/completions"
+    # Note the /v1/chat/completions path
+    url = f"{openai_api_base}/v1/chat/completions"
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=payload, headers=headers)
     response.raise_for_status()
@@ -75,8 +76,10 @@ async def fetch_openai_models() -> List[Dict[str, Any]]:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {openai_api_key}"
     }
+    # Note the /v1/models path
+    url = f"{openai_api_base}/v1/models"
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{openai_api_base}/models", headers=headers)
+        response = await client.get(url, headers=headers)
     response.raise_for_status()
     models_response = response.json()
     return [
@@ -84,7 +87,7 @@ async def fetch_openai_models() -> List[Dict[str, Any]]:
         for model in models_response.get("data", [])
     ]
 
-# --- Grok API Functions Using httpx ---
+# --- Grok API Functions ---
 async def call_grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
@@ -100,6 +103,7 @@ async def call_grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]
         "stream": False,
         "temperature": 0
     }
+    # Grok's /chat/completions path
     url = f"{grok_base_url}/chat/completions"
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=payload, headers=headers)
@@ -116,8 +120,9 @@ async def fetch_grok_models() -> List[Dict[str, Any]]:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {grok_api_key}"
     }
+    url = f"{grok_base_url}/models"
     async with httpx.AsyncClient() as client:
-        response = await client.get(f"{grok_base_url}/models", headers=headers)
+        response = await client.get(url, headers=headers)
     response.raise_for_status()
     models = response.json().get("data", [])
     return [
@@ -138,19 +143,21 @@ async def get_models(api_key: str = Depends(get_api_key)):
 async def create_chat_completion(chat_request: ChatRequest, api_key: str = Depends(get_api_key)):
     model = chat_request.model.strip().lower()
 
+    # For OpenAI
     if model in ["gpt-4", "gpt-3.5-turbo"] or model.startswith("openai"):
         try:
             result = await call_openai_chat_completion(chat_request)
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    
+
+    # For Grok
     elif model.startswith("grok"):
         try:
             result = await call_grok_chat_completion(chat_request)
             return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    
+
     else:
         raise HTTPException(status_code=400, detail="Unsupported model")
