@@ -5,18 +5,17 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 import httpx
 from starlette.requests import Request
-from starlette.responses import Response
 
 # --- Configuration ---
-DEFAULT_API_KEY = "vertiqalKey1"
+DEFAULT_API_KEY = "vertiqalKey1"  # fallback if 'API_KEY' not in env
 API_KEY = os.getenv("API_KEY", DEFAULT_API_KEY)
 API_KEY_NAME = "X-API-Key"
 
 app = FastAPI()
 
-# --- CORS Setup ---
+# --- CORS Setup (adjust domain as needed) ---
 origins = [
-    "https://ralph.vertiqal.ai",  # Your OpenWebUI public domain
+    "https://ralph.vertiqal.ai",  
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -26,16 +25,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- MIDDLEWARE to accept "Authorization: Bearer <token>" and treat it like "X-API-Key: <token>" ---
+# --- MIDDLEWARE to accept Bearer token & treat as X-API-Key ---
 @app.middleware("http")
 async def accept_bearer_middleware(request: Request, call_next):
-    """If we see 'Authorization: Bearer <token>', treat it like 'X-API-Key: <token>'."""
+    """If 'Authorization: Bearer <token>', treat it like 'X-API-Key: <token>'."""
     if "authorization" in request.headers:
         auth = request.headers["authorization"]
         if auth.startswith("Bearer "):
             token = auth[len("Bearer "):].strip()
-            # Dynamically inject X-API-Key for the rest of the pipeline
-            # to be recognized by get_api_key dependency.
+            # Dynamically inject X-API-Key
             request.headers.__dict__["_list"].append((b"x-api-key", token.encode()))
     return await call_next(request)
 
@@ -45,12 +43,16 @@ async def get_api_key(x_api_key: str = Header(...)):
         raise HTTPException(status_code=403, detail="Invalid API Key")
     return x_api_key
 
-# --- Root Endpoint ---
+# ==================
+#    ROOT ENDPOINT
+# ==================
 @app.get("/")
 async def root(api_key: str = Depends(get_api_key)):
     return {"greeting": "Hello, World!", "message": "Welcome to FastAPI!"}
 
-# --- Data Models ---
+# ==================
+#    DATA MODELS
+# ==================
 class Message(BaseModel):
     role: str
     content: str
@@ -59,9 +61,9 @@ class ChatRequest(BaseModel):
     model: str
     messages: List[Message]
 
-# ===================
-#     OPENAI
-# ===================
+# ==================
+#   OPENAI CALLS
+# ==================
 async def call_openai_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     openai_api_key = os.getenv("OPENAI_API_KEY")
     openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
@@ -96,15 +98,15 @@ async def fetch_openai_models() -> List[Dict[str, Any]]:
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers)
     response.raise_for_status()
-    models_response = response.json()
+    data = response.json().get("data", [])
     return [
-        {"id": model["id"], "object": "model", "owned_by": "openai"}
-        for model in models_response.get("data", [])
+        {"id": m["id"], "object": "model", "owned_by": "openai"}
+        for m in data
     ]
 
-# ===================
-#     GROK
-# ===================
+# ==================
+#    GROK CALLS
+# ==================
 async def call_grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
@@ -140,50 +142,44 @@ async def fetch_grok_models() -> List[Dict[str, Any]]:
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers)
     response.raise_for_status()
-    models = response.json().get("data", [])
+    data = response.json().get("data", [])
     return [
-        {"id": model["id"], "object": "model", "owned_by": "grok"}
-        for model in models
+        {"id": m["id"], "object": "model", "owned_by": "grok"}
+        for m in data
     ]
 
-# ===================
-#   MODELS ROUTES
-# ===================
-
-# This is your main 'v1/models' route, used by your cURL approach:
+# ==================
+#   MODELS ENDPOINT
+# ==================
 @app.get("/v1/models")
 async def get_models(api_key: str = Depends(get_api_key)):
     openai_models = await fetch_openai_models()
     grok_models = await fetch_grok_models()
     return {"object": "list", "data": openai_models + grok_models}
 
-# This alias route helps with OpenWebUI calling '/models':
 @app.get("/models")
 async def get_models_alias(api_key: str = Depends(get_api_key)):
     return await get_models(api_key)
 
-# =========================
-#  CHAT COMPLETIONS ROUTES
-# =========================
-
+# ==================
+#  CHAT COMPLETIONS
+# ==================
 @app.post("/v1/chat/completions")
 async def create_chat_completion(chat_request: ChatRequest, api_key: str = Depends(get_api_key)):
+    # If model starts with "grok", route to Grok, otherwise route to OpenAI
     model = chat_request.model.strip().lower()
-
-    if model in ["gpt-4", "gpt-3.5-turbo"] or model.startswith("openai"):
-        try:
-            return await call_openai_chat_completion(chat_request)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    elif model.startswith("grok"):
+    if model.startswith("grok"):
         try:
             return await call_grok_chat_completion(chat_request)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     else:
-        raise HTTPException(status_code=400, detail="Unsupported model")
+        # Default everything else to OpenAI
+        try:
+            return await call_openai_chat_completion(chat_request)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
-# This alias route helps if OpenWebUI calls '/chat/completions':
 @app.post("/chat/completions")
 async def create_chat_completion_alias(chat_request: ChatRequest, api_key: str = Depends(get_api_key)):
     return await create_chat_completion(chat_request, api_key)
