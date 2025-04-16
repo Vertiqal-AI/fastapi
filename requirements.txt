@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 pydantic
-openai
+openai==1.74.0
 requests
 python-dotenv
 hypercorn
