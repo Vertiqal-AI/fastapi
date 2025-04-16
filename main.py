@@ -7,7 +7,7 @@ import openai
 import requests
 
 # --- Configuration ---
-# Default API key for our own authentication (can be overridden via Railway environment variable "API_KEY")
+# Default API key for our own authentication (can be overridden with the environment variable "API_KEY")
 DEFAULT_API_KEY = "vertiqalKey1"
 API_KEY = os.getenv("API_KEY", DEFAULT_API_KEY)
 API_KEY_NAME = "X-API-Key"
@@ -15,8 +15,9 @@ API_KEY_NAME = "X-API-Key"
 app = FastAPI()
 
 # --- CORS Configuration ---
+# Allow requests from your OpenWebUI public domain.
 origins = [
-    "https://ralph.vertiqal.ai",  # Adjust as needed.
+    "https://ralph.vertiqal.ai",  # Adjust this to your actual domain.
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -37,11 +38,11 @@ async def get_api_key(x_api_key: str = Header(...)):
 async def root(api_key: str = Depends(get_api_key)):
     return {"greeting": "Hello, World!", "message": "Welcome to FastAPI!"}
 
-# --- Function to Fetch OpenAI Models ---
+# --- Fetching OpenAI Models ---
 def fetch_openai_models() -> List[Dict[str, Any]]:
     """
-    Fetch models from OpenAI in real time.
-    OPENAI_API_BASE is configurable via the environment variable (default is https://api.openai.com).
+    Fetch the list of models from OpenAI in real time.
+    The OpenAI base URL is configurable via the "OPENAI_API_BASE" environment variable.
     """
     openai.api_key = os.getenv("OPENAI_API_KEY")
     openai.api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
@@ -58,14 +59,14 @@ def fetch_openai_models() -> List[Dict[str, Any]]:
         print("Error fetching OpenAI models:", e)
         return []
 
-# --- Function to Fetch Grok Models ---
+# --- Fetching Grok Models ---
 def fetch_grok_models() -> List[Dict[str, Any]]:
     """
-    Fetch models from Grok (xAI) using their API.
-    Set GROK_BASE_URL to "https://api.x.ai/v1" (or per your provider's instructions).
+    Fetch the list of models from Grok (xAI) using their API.
+    Ensure GROK_API_KEY and GROK_BASE_URL are set.
     """
     grok_api_key = os.getenv("GROK_API_KEY")
-    grok_base_url = os.getenv("GROK_BASE_URL")  # Ensure this is set to "https://api.x.ai/v1"
+    grok_base_url = os.getenv("GROK_BASE_URL")
     if not grok_api_key or not grok_base_url:
         print("GROK_API_KEY or GROK_BASE_URL not set.")
         return []
@@ -105,10 +106,8 @@ class ChatRequest(BaseModel):
 # --- Function to Call Grok Chat Completions ---
 def grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
     """
-    Call Grok (xAI)'s chat completions endpoint.
-    Uses the sample provided:
-      curl https://api.x.ai/v1/chat/completions ...
-    Make sure GROK_API_KEY and GROK_BASE_URL are correctly set.
+    Call Grok (xAI)'s chat completions endpoint using the provided sample.
+    Ensure that GROK_API_KEY and GROK_BASE_URL are correctly set.
     """
     grok_api_key = os.getenv("GROK_API_KEY")
     grok_base_url = os.getenv("GROK_BASE_URL")
@@ -139,14 +138,14 @@ def grok_chat_completion(chat_request: ChatRequest) -> Dict[str, Any]:
 async def create_chat_completion(chat_request: ChatRequest, api_key: str = Depends(get_api_key)):
     model = chat_request.model.strip().lower()
 
-    # Routing for OpenAI models:
+    # Route for OpenAI models:
     if model in ["gpt-4", "gpt-3.5-turbo"] or model.startswith("openai"):
         openai.api_key = os.getenv("OPENAI_API_KEY")
         openai.api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com")
         if not openai.api_key:
             raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
         try:
-            # Use the new asynchronous interface:
+            # Using the new async interface:
             completion = await openai.Chat.completions.acreate(
                 model=model,
                 messages=[{"role": m.role, "content": m.content} for m in chat_request.messages]
@@ -155,7 +154,7 @@ async def create_chat_completion(chat_request: ChatRequest, api_key: str = Depen
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
-    # Routing for Grok models (model IDs starting with "grok"):
+    # Route for Grok models (model IDs starting with "grok"):
     elif model.startswith("grok"):
         try:
             result = grok_chat_completion(chat_request)
