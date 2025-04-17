@@ -4,3 +4,4 @@ pydantic
 httpx
 python-dotenv
 hypercorn
+sse-starlette==1.6.1
